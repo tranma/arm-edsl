@@ -15,6 +15,9 @@ module ARM.Assembler.Types
        , Shift(..)
        , CondCode(..)
        , MemType(..)
+       , Effect(..)
+       , (:+:)
+       , (:++:)
        )
 where
 
@@ -28,15 +31,15 @@ type N = Int
 -- * register with optional shift
 --
 data FlexibleOperand :: [Effect] -> * where
-  Constant :: FlexibleOperand '[]
-  -- Immediate shift
+  Constant  :: FlexibleOperand '[]
+  Reg       :: SReg m
+            -> FlexibleOperand ('Read m ': '[])
   RegShiftN :: SReg m
-                 -> Shift N
-                 -> FlexibleOperand ('Read m ': '[])
-  -- Reg-controlled shift
+            -> Shift N
+            -> FlexibleOperand ('Read m ': '[])
   RegShiftR :: SReg m
-                 -> Shift (SReg s)
-                 -> FlexibleOperand ['Read s, 'Read m]
+            -> Shift (SReg s)
+            -> FlexibleOperand ['Read s, 'Read m]
 
 -- | Shift operations (used in conjunction with instruction operands), with:
 --
@@ -44,11 +47,11 @@ data FlexibleOperand :: [Effect] -> * where
 -- * register-controlled (@SReg s@), using the least significant byte
 --
 data Shift s where
-  ASR :: s -> Shift s -- ^ Arithmetic shift right, n in [1..32]
-  LSL :: s -> Shift s -- ^ Logical shift left, n in [0..31]
-  LSR :: s -> Shift s -- ^ Logical shift right, n in [1..32]
-  ROR :: s -> Shift s -- ^ Rotate right, n in [1..32]
-  RRX :: Shift ()     -- ^ Rotate right one bit, with extend
+  ASR :: s -> Shift s -- Arithmetic shift right, n in [1..32]
+  LSL :: s -> Shift s -- Logical shift left, n in [0..31]
+  LSR :: s -> Shift s -- Logical shift right, n in [1..32]
+  ROR :: s -> Shift s -- Rotate right, n in [1..32]
+  RRX :: Shift ()     -- Rotate right one bit, with extend
 
 -- | Conditional code suffixes
 data CondCode

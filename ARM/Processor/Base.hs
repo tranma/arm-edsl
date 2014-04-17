@@ -9,8 +9,8 @@
 
 module ARM.Processor.Base
        ( Reg(..)
-       , SReg
-       , ALUFlags(..)
+       , SReg, Sing(..)
+       , ALUFlags
        ) 
 where
     
