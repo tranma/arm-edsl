@@ -9,12 +9,13 @@
 
 module ARM.Processor.Base
        ( Reg(..)
-       , SReg, Sing(..)
+       , SReg, Sing(..), NotSP, NotLR, NotPC
        , ALUFlags
        ) 
 where
     
 import Data.Singletons.TH
+import ARM.Utils.TH
 
 -- | ARM general purpose registers, stack pointer, link register and program counter.
 data Reg
@@ -23,10 +24,14 @@ data Reg
 
 $(genSingletons [''Reg])
 
+$(genClassExclude ''Reg 'SP)
+$(genClassExclude ''Reg 'LR)
+$(genClassExclude ''Reg 'PC)
+  
 -- | ALU status flags (in APSR)
 data ALUFlags
-  = ALUFlags { n :: Bool -- ^ Negative
-             , z :: Bool -- ^ Zero
-             , c :: Bool -- ^ Curry
-             , v :: Bool -- ^ Overflow
+  = ALUFlags { flagN :: Bool -- ^ Negative
+             , flagZ :: Bool -- ^ Zero
+             , flagC :: Bool -- ^ Curry
+             , flagV :: Bool -- ^ Overflow
              }

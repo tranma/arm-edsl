@@ -2,54 +2,80 @@
     GADTs
   , DataKinds
   , TypeOperators
+  , TemplateHaskell
+  , Rank2Types
   #-}
 
+-- | Smart and Pretty constructors for ARM Types
 module ARM.Assembler.Smart
-
+     ( -- Instructions
+       add, sub, rsb, adc, sbc, rsc )
 where
 
 import ARM.Processor.Base
 import ARM.Assembler.Types
 
---------------------------------------------------------------------------------
--- Arithmetic ------------------------------------------------------------------
+-- Rules -----------------------------------------------------------------------
 
-_add = mk1 ADD
-_sub = mk1 SUB
+accept_sp :: Bool -> SReg d -> SReg n -> Op m s e -> Bool
+accept_sp True SSP SSP (ShiftReg (NoShift _)) = True
+accept_sp True SSP SSP (ShiftReg (LSL_n _ 1)) = True
+accept_sp True SSP SSP (ShiftReg (LSL_n _ 2)) = True
+accept_sp True SSP SSP (ShiftReg (LSL_n _ 3)) = True
+accept_sp _ _ _ _ = False
 
-mk1 f True c SSP SSP e@(Reg _)               = f True c SSP SSP e
-mk1 f True c SSP SSP e@(RegShiftN _ (LSL 1)) = f True c SSP SSP e
-mk1 f True c SSP SSP e@(RegShiftN _ (LSL 2)) = f True c SSP SSP e
-mk1 f True c SSP SSP e@(RegShiftN _ (LSL 3)) = f True c SSP SSP e
-mk1 _ _    _ SSP _   _       = error $ "Cannot use SP for Rd"
-mk1 _ _    _ SPC _   _       = error $ "Cannot use PC for Rd"
-mk1 _ _    _ _   SPC _       = error $ "Cannot use PC for Rn"
-mk1 _ _    _ _   _   (RegShiftR _ s)
-  | Just SPC <- takeShiftR s = error $ "Cannot use PC for Shift"
-mk1 f b c d n e = f b c d n e
+reject_sp :: SReg r -> Bool
+reject_sp SSP = True
+reject_sp _   = False
+          
+accept_offset :: MemType a -> OffsetReg n m s i e -> Bool
+accept_offset m r
+  | Just n <- takeOffsetN r = inRange m n
+  | otherwise = True
 
-_rsb = mk2 RSB
-_adc = mk2 ADC
-_sbc = mk2 SBC
-_rsc = mk2 RSC
+inRange :: MemType a -> Int -> Bool
+inRange W  n | range_4096 n = True
+inRange B  n | range_4096 n = True
+inRange SB n | range_256  n = True
+inRange H  n | range_256  n = True
+inRange SH n | range_256  n = True
+inRange _ _ = False
 
-mk2 f True c SSP SSP e@(Reg _)               = f True c SSP SSP e
-mk2 f True c SSP SSP e@(RegShiftN _ (LSL 1)) = f True c SSP SSP e
-mk2 f True c SSP SSP e@(RegShiftN _ (LSL 2)) = f True c SSP SSP e
-mk2 f True c SSP SSP e@(RegShiftN _ (LSL 3)) = f True c SSP SSP e
-mk2 _ _    _ SSP _   _       = error $ "Cannot use SP for Rd"
-mk2 _ _    _ _   SSP _       = error $ "Cannot use SP for Rn"
-mk2 _ _    _ SPC _   _       = error $ "Cannot use PC for Rd"
-mk2 _ _    _ _   SPC _       = error $ "Cannot use PC for Rn"
-mk2 _ _    _ _   _   (RegShiftR _ s)
-  | Just SPC <- takeShiftR s = error $ "Cannot use PC for Shift"
-mk2 f b c d n e = f b c d n e
+range_256  n = n >= (-255)  && n <= 255
+range_4096 n = n >= (-4095) && n <= 4095
 
---------------------------------------------------------------------------------
--- Helpers ---------------------------------------------------------------------
+takeOffsetN :: OffsetReg m n s i e -> Maybe Int
+takeOffsetN (OffsetRegN_ _ n)   = Just n
+takeOffsetN (OffsetRegN  _ n _) = Just n
+takeOffsetN _ = Nothing
 
-takeShiftR (ASR s) = Just s
-takeShiftR (LSL s) = Just s
-takeShiftR (LSR s) = Just s
-takeShiftR (ROR s) = Just s 
-takeShiftR RRX     = Nothing
+-- Instructions ----------------------------------------------------------------
+
+-- Arithmetic
+
+add, sub
+  :: ( NotPC d, NotPC n
+     , NotPC m, NotPC s )
+   => InsArithmetic d n m s
+add s cond rd rn op
+  | (or         [ accept_sp s rd rn op ]) ||
+    (not . or $ [ reject_sp rd ])
+  = ADD s cond rd rn op
+  | otherwise = error $ "ADD: rejected usage of SP as Rd."
+sub s cond rd rn op
+  | (or         [ accept_sp s rd rn op ]) ||
+    (not . or $ [ reject_sp rd ])
+  = SUB s cond rd rn op
+  | otherwise = error $ "SUB: rejected usage of SP as Rd."
+
+rsb, adc, sbc, rsc
+  :: ( NotSP d, NotSP n
+     , NotPC d, NotPC n
+     , NotPC m, NotPC s )
+   => InsArithmetic d n m s
+rsb = RSB
+adc = ADC
+sbc = SBC
+rsc = RSC
+
+-- Memory Access
