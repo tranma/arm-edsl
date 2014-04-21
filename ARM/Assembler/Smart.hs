@@ -7,7 +7,7 @@
   #-}
 
 -- | Smart and Pretty constructors
---   to deal with the exceptions and corner cases when constructing
+--   deal with the exceptions and corner cases when constructing
 --   ARM assembly instructions.
 --
 module ARM.Assembler.Smart
@@ -58,6 +58,10 @@ accept_offset :: MemType a -> OffsetReg n m s i e -> Bool
 accept_offset m r
   | Just n <- takeOffsetN r = inRange m n
   | otherwise = True
+  where takeOffsetN :: OffsetReg m n s i e -> Maybe Int
+        takeOffsetN (OffsetRegN_ _ n)   = Just n
+        takeOffsetN (OffsetRegN  _ n _) = Just n
+        takeOffsetN _ = Nothing
 
 inRange :: MemType a -> Int -> Bool
 inRange W  n | range_4096 n = True
@@ -69,11 +73,6 @@ inRange _ _ = False
 
 range_256  n = n >= (-255)  && n <= 255
 range_4096 n = n >= (-4095) && n <= 4095
-
-takeOffsetN :: OffsetReg m n s i e -> Maybe Int
-takeOffsetN (OffsetRegN_ _ n)   = Just n
-takeOffsetN (OffsetRegN  _ n _) = Just n
-takeOffsetN _ = Nothing
 
 -- Helpers ---------------------------------------------------------------------
 

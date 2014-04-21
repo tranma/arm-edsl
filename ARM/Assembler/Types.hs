@@ -5,8 +5,12 @@
   , TypeFamilies
   , TypeOperators
   , ScopedTypeVariables
+  , FlexibleInstances
   , UndecidableInstances
   , Rank2Types
+  , MultiParamTypeClasses
+  , ConstraintKinds
+  , TemplateHaskell
   #-}
 
 module ARM.Assembler.Types
@@ -15,7 +19,7 @@ module ARM.Assembler.Types
          -- Instruction
        , Ins(..)
        , InsArithmetic
-       , Cond(..), MemType(..)
+       , Cond(..), Data(..)
        , Effect(..), (:+:), (:++:)
          -- Register shifts and offsets
        , ShiftReg(..)
@@ -25,9 +29,10 @@ module ARM.Assembler.Types
        )
 where
 
-import ARM.Processor.Base
+import Data.Singletons.TH
+import GHC.Exts (Constraint)
 
-type N = Int
+import ARM.Processor.Base
 
 -- | Effect on a specific register or on some memory.
 data Effect
@@ -44,6 +49,12 @@ type family (:+:) (a :: e) (as :: [e]) :: [e] where
 type family (:++:) (a :: [e]) (b :: [e]) :: [e] where
   (:++:) '[] ys = ys
   (:++:) (x ': xs) ys = x :+: (xs :++: ys)
+
+-- | Effect set membership
+type family Elem (a :: e) (b :: [e]) :: Bool where
+  Elem x '[]       = False
+  Elem x (x ': ys) = True
+  Elem x (y ': ys) = Elem x ys
 
 -- Data Processing Operations --------------------------------------------------
 
@@ -76,6 +87,9 @@ data Op
   Constant :: Op () () '[]
   ShiftReg :: ShiftReg m s e -> Op (SReg m) s e
 
+-- | Constant for offsets (range is too large to be encoded in the types)
+type N = Int
+
 -- | OffsetRegs
 data OffsetReg
      :: Reg      -- n Register to be offsetted
@@ -85,23 +99,24 @@ data OffsetReg
      -> [Effect] -- e Effects of the offset
      -> * where
 
-  -- [Rn {, #offset}] pre-indexed, no writeback, immediate.
+  -- [Rn {, #offset}]       pre-indexed, no writeback, immediate
+  -- [Rn, +/-Rm {, shift}]  pre-indexed, no writeback, register-controlled.
+  -- referred to as "immediate form" in the docs.
   OffsetRegN_ :: SReg n -> N
               -> OffsetReg n () () 'Pre ('Read n ': '[])
-
-  -- [Rn, #offset]! pre-indexed, writeback, immediate.
-  -- [Rn], #offset  post-indexed, writeback, immediate.
-  OffsetRegN  :: SReg n -> N -> (SIndex i)
-              -> OffsetReg n () () i    ['Read n, 'Write n]
-
-  -- [Rn, +/-Rm {, shift}]  pre-indexed, no writeback, register-controlled.
   OffsetRegR_ :: SReg n -> PM -> (ShiftReg m s e)
               -> OffsetReg n (SReg m) s 'Pre (('Read n) :+: e)
 
+  -- [Rn, #offset]! pre-indexed, writeback, immediate
   -- [Rn, +/-Rm {, shift}]! pre-indexed, writeback, register-controlled.
+  -- referred to as "pre-indexed form" in the docs.
+  -- [Rn], #offset  post-indexed, writeback, immediate.
   -- [Rn], +/-Rm {, shift}  post-indexed, writeback, register-controlled.
+  -- referred to as "post-indexed form" in the docs
+  OffsetRegN  :: SReg n -> N -> (SIndex i)
+              -> OffsetReg n () () i ['Read n, 'Write n]
   OffsetRegR  :: SReg n -> PM -> (ShiftReg m s e) -> (SIndex i)
-              -> OffsetReg n (SReg m) s i    (['Read n, 'Write n] :++: e)
+              -> OffsetReg n (SReg m) s i (['Read n, 'Write n] :++: e)
 
 data PM = Plus | Minus
 data Index = Pre | Post
@@ -113,13 +128,9 @@ data SIndex n where
 
 
 -- | Memory type
-data MemType s where
-  B  :: MemType ()      -- unsigned byte
-  SB :: MemType Signed  -- signed byte
-  H  :: MemType ()      -- unsigned halfword
-  SH :: MemType Signed  -- signed halfword
-  W  :: MemType ()      -- word
-data Signed
+data Data = Byte | SignedByte | Halfword | SignedHalfword | Word
+
+$(genSingletons [''Data])
 
 -- | Conditional code suffixes
 data Cond
@@ -199,17 +210,71 @@ data Ins :: [Effect] -> * where
       -> Ins (['Write d, 'Read n] :++: e) 
 
   -- Load and Store (immediate and register-controlled offset)
-  LDR :: MemType a                -- Type to load
-      -> Cond                     -- Conditional execution
-      -> SReg t                   -- Register holding the value to load 
-      -> OffsetReg rn srm srs i e -- Registers holding the base address and offset
-                                  -- plus the effects of the offset operation
-      -> Ins (['Read t, 'Store] :++: e)
-  STR :: MemType ()               -- Type to store, unsigned and word only
-      -> Cond    
-      -> SReg t
-      -> OffsetReg rn srm srs i e
-      -> Ins (['Read t, 'Store] :++: e)
+  LDR  :: ( EvenReg t
+          , NotLR   t
+          , NotR12  t                 -- "strongly recommended"
+          , Elem ('Write t) e ~ False -- If there is writeback, Rt != Rn
+          , WordOrNotPC d t           -- PC as Rt is allowed if type is Word
+          )
+       => SData d             -- Type to load
+       -> Cond                -- Conditional execution
+       -> SReg t              -- Register holding the value to load 
+       -> OffsetReg n m s i e -- Registers holding the base address & offset
+       -> Ins (['Read t, 'Store] :++: e)
+  STR  :: ( EvenReg t
+          , NotLR   t
+          , NotR12  t
+          , Elem ('Write t) e ~ False
+          , WordOrNotPC d t   -- PC as Rd is allowed if type is Word
+          , NoPCWrite e       -- PC as Rn is allowed if there is no writeback
+          )
+       => SData d
+       -> Cond
+       -> SReg t
+       -> OffsetReg n m s i e
+       -> Ins (['Read t, 'Store] :++: e)
+  LDRD :: ( EvenReg t
+          , NotLR   t
+          , NotR12  t
+          , Elem ('Write t)  e ~ False
+          , t2 ~ SuccReg t
+          , Elem ('Write t2) e ~ False
+          , m :!~: t, m :!~: t2
+          )
+       => Cond    
+       -> SReg t
+       -> SReg t2
+       -> OffsetReg n m s i e
+       -> Ins (['Read t, 'Store] :++: e)
+  STRD :: ( EvenReg t
+          , NotLR t
+          , NotR12 t
+          , Elem ('Write t)  e ~ False
+          , t2 ~ SuccReg t
+          , NotPC t2
+          , Elem ('Write t2) e ~ False
+          )
+       => Cond    
+       -> SReg t
+       -> SReg t2
+       -> OffsetReg n m s i e
+       -> Ins (['Read t, 'Store] :++: e)
+
+type family (:!~:) (a :: *) (b :: Reg) :: Constraint where
+  (:!~:) (SReg x) x = FConstraint
+  (:!~:) (SReg x) y = TConstraint
+  
+type family WordOrNotPC (d :: Data) (t :: Reg) :: Constraint where
+  WordOrNotPC d 'PC = d ~ 'Word
+  WordOrNotPC d t   = NotPC t
+
+type family NoPCWrite (e :: [Effect]) :: Constraint where
+  NoPCWrite '[] = TConstraint
+  NoPCWrite (('Write PC) ': es) = FConstraint
+  NoPCWrite (e ': es) = NoPCWrite es
+
+type TConstraint = True ~ True
+type FConstraint = True ~ False
 
 data Block :: [Effect] -> * where
      Nil :: Block '[]
