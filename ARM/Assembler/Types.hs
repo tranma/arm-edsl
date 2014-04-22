@@ -30,6 +30,8 @@ module ARM.Assembler.Types
 where
 
 import Data.Singletons.TH
+import Data.Proxy
+import GHC.TypeLits
 import GHC.Exts (Constraint)
 
 import ARM.Processor.Base
@@ -66,11 +68,15 @@ data ShiftReg
      -> * where
   NoShift :: SReg m -> ShiftReg m () '[]
   -- Immediate shifts
-  ASR_n :: SReg m -> N      -> ShiftReg m N ('Read m ': '[])
-  LSL_n :: SReg m -> N      -> ShiftReg m N ('Read m ': '[])
-  LSR_n :: SReg m -> N      -> ShiftReg m N ('Read m ': '[])
-  ROR_n :: SReg m -> N      -> ShiftReg m N ('Read m ': '[])
-  RRX_n :: SReg m ->           ShiftReg m N ('Read m ': '[])
+  ASR_n :: (KnownNat n, 1 <= n, n <= 32)
+        => SReg m -> Proxy n -> ShiftReg m N ('Read m ': '[])
+  LSL_n :: (KnownNat n, 0 <= n, n <= 31)
+        => SReg m -> Proxy n -> ShiftReg m N ('Read m ': '[])
+  LSR_n :: (KnownNat n, 1 <= n, n <= 32)
+        => SReg m -> Proxy n -> ShiftReg m N ('Read m ': '[])
+  ROR_n :: (KnownNat n, 1 <= n, n <= 31)
+        => SReg m -> Proxy n -> ShiftReg m N ('Read m ': '[])
+  RRX_n :: SReg m -> ShiftReg m N ('Read m ': '[])
   -- Register-controlled shifts
   ASR_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
   LSL_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
@@ -215,11 +221,12 @@ data Ins :: [Effect] -> * where
           , NotR12  t                 -- "strongly recommended"
           , Elem ('Write t) e ~ False -- If there is writeback, Rt != Rn
           , WordOrNotPC d t           -- PC as Rt is allowed if type is Word
+          , AllowedOffset d m e
           )
        => SData d             -- Type to load
        -> Cond                -- Conditional execution
        -> SReg t              -- Register holding the value to load 
-       -> OffsetReg n m s i e -- Registers holding the base address & offset
+       -> OffsetReg n (SReg m) s i e -- Registers holding the base address & offset
        -> Ins (['Read t, 'Store] :++: e)
   STR  :: ( EvenReg t
           , NotLR   t
@@ -227,11 +234,12 @@ data Ins :: [Effect] -> * where
           , Elem ('Write t) e ~ False
           , WordOrNotPC d t   -- PC as Rd is allowed if type is Word
           , NoPCWrite e       -- PC as Rn is allowed if there is no writeback
+          , AllowedOffset d m e
           )
        => SData d
        -> Cond
        -> SReg t
-       -> OffsetReg n m s i e
+       -> OffsetReg n (SReg m) s i e
        -> Ins (['Read t, 'Store] :++: e)
   LDRD :: ( EvenReg t
           , NotLR   t
@@ -240,11 +248,12 @@ data Ins :: [Effect] -> * where
           , t2 ~ SuccReg t
           , Elem ('Write t2) e ~ False
           , m :!~: t, m :!~: t2
+          , Elem ('Read m) e ~ False -- No shift allowed
           )
        => Cond    
        -> SReg t
        -> SReg t2
-       -> OffsetReg n m s i e
+       -> OffsetReg n (SReg m) s i e
        -> Ins (['Read t, 'Store] :++: e)
   STRD :: ( EvenReg t
           , NotLR t
@@ -253,16 +262,17 @@ data Ins :: [Effect] -> * where
           , t2 ~ SuccReg t
           , NotPC t2
           , Elem ('Write t2) e ~ False
+          , Elem ('Read m) e ~ False
           )
        => Cond    
        -> SReg t
        -> SReg t2
-       -> OffsetReg n m s i e
+       -> OffsetReg n (SReg m) s i e
        -> Ins (['Read t, 'Store] :++: e)
 
-type family (:!~:) (a :: *) (b :: Reg) :: Constraint where
-  (:!~:) (SReg x) x = FConstraint
-  (:!~:) (SReg x) y = TConstraint
+type family (:!~:) (a :: Reg) (b :: Reg) :: Constraint where
+  (:!~:) x x = FConstraint
+  (:!~:) x y = TConstraint
   
 type family WordOrNotPC (d :: Data) (t :: Reg) :: Constraint where
   WordOrNotPC d 'PC = d ~ 'Word
@@ -272,6 +282,16 @@ type family NoPCWrite (e :: [Effect]) :: Constraint where
   NoPCWrite '[] = TConstraint
   NoPCWrite (('Write PC) ': es) = FConstraint
   NoPCWrite (e ': es) = NoPCWrite es
+
+-- | LDR/STR (register offsets) allows normal shifts for word/byte, and
+--   disallows shifts otherwise.
+--
+type family AllowedOffset
+  (a :: Data) (b :: Reg) (e :: [Effect]) :: Constraint where
+  AllowedOffset 'SignedByte     m e = Elem ('Read m) e ~ False
+  AllowedOffset 'Halfword       m e = Elem ('Read m) e ~ False
+  AllowedOffset 'SignedHalfword m e = Elem ('Read m) e ~ False
+  AllowedOffset d               m e = TConstraint
 
 type TConstraint = True ~ True
 type FConstraint = True ~ False
