@@ -19,7 +19,9 @@ library
   exposed-modules:     Main,
                        ARM.Processor.Base,
                        ARM.Assembler.Types,
-                       ARM.Assembler.Smart
+                       ARM.Assembler.Smart,
+                       ARM.Assembler.Pretty,
+                       ARM.Assembler.Quote
   other-modules:       ARM.Utils.TH
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8,

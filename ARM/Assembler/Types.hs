@@ -15,7 +15,7 @@
 
 module ARM.Assembler.Types
        ( -- Program
-         Block(..) 
+         Block(..)
          -- Instruction
        , Ins(..)
        , InsArithmetic
@@ -82,7 +82,6 @@ data ShiftReg
   LSL_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
   LSR_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
   ROR_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
-  RRX_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
 
 -- | Flexible second operand (@Operand2@)
 data Op
@@ -154,7 +153,7 @@ data Cond
   | LT      -- ^ N != V
   | GT      -- ^ Z clear, N == V
   | LE      -- ^ Z set, N != V
-  | AL      -- ^ Any (default)  
+  | AL      -- ^ Any (default)
 
 type InsArithmetic d n m s
   = forall e .
@@ -181,7 +180,7 @@ data Ins :: [Effect] -> * where
       -> Cond
       -> SReg d -> SReg n
       -> Op (SReg m) (SReg s) e
-      -> Ins (['Write d, 'Read n] :++: e) 
+      -> Ins (['Write d, 'Read n] :++: e)
   RSB :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
          , NotPC m, NotPC s )
@@ -189,7 +188,7 @@ data Ins :: [Effect] -> * where
       -> Cond
       -> SReg d -> SReg n
       -> Op (SReg m) (SReg s) e
-      -> Ins (['Write d, 'Read n] :++: e) 
+      -> Ins (['Write d, 'Read n] :++: e)
   ADC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
          , NotPC m, NotPC s )
@@ -197,7 +196,7 @@ data Ins :: [Effect] -> * where
       -> Cond
       -> SReg d -> SReg n
       -> Op (SReg m) (SReg s) e
-      -> Ins (['Write d, 'Read n] :++: e) 
+      -> Ins (['Write d, 'Read n] :++: e)
   SBC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
          , NotPC m, NotPC s )
@@ -205,7 +204,7 @@ data Ins :: [Effect] -> * where
       -> Cond
       -> SReg d -> SReg n
       -> Op (SReg m) (SReg s) e
-      -> Ins (['Write d, 'Read n] :++: e) 
+      -> Ins (['Write d, 'Read n] :++: e)
   RSC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
          , NotPC m, NotPC s )
@@ -213,7 +212,7 @@ data Ins :: [Effect] -> * where
       -> Cond
       -> SReg d -> SReg n
       -> Op (SReg m) (SReg s) e
-      -> Ins (['Write d, 'Read n] :++: e) 
+      -> Ins (['Write d, 'Read n] :++: e)
 
   -- Load and Store (immediate and register-controlled offset)
   LDR  :: ( EvenReg t
@@ -225,7 +224,7 @@ data Ins :: [Effect] -> * where
           )
        => SData d             -- Type to load
        -> Cond                -- Conditional execution
-       -> SReg t              -- Register holding the value to load 
+       -> SReg t              -- Register holding the value to load
        -> OffsetReg n (SReg m) s i e -- Registers holding the base address & offset
        -> Ins (['Read t, 'Store] :++: e)
   STR  :: ( EvenReg t
@@ -250,7 +249,7 @@ data Ins :: [Effect] -> * where
           , m :!~: t, m :!~: t2
           , Elem ('Read m) e ~ False -- No shift allowed
           )
-       => Cond    
+       => Cond
        -> SReg t
        -> SReg t2
        -> OffsetReg n (SReg m) s i e
@@ -264,7 +263,7 @@ data Ins :: [Effect] -> * where
           , Elem ('Write t2) e ~ False
           , Elem ('Read m) e ~ False
           )
-       => Cond    
+       => Cond
        -> SReg t
        -> SReg t2
        -> OffsetReg n (SReg m) s i e
@@ -273,7 +272,7 @@ data Ins :: [Effect] -> * where
 type family (:!~:) (a :: Reg) (b :: Reg) :: Constraint where
   (:!~:) x x = FConstraint
   (:!~:) x y = TConstraint
-  
+
 type family WordOrNotPC (d :: Data) (t :: Reg) :: Constraint where
   WordOrNotPC d 'PC = d ~ 'Word
   WordOrNotPC d t   = NotPC t

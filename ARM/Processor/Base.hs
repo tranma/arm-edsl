@@ -15,9 +15,9 @@ module ARM.Processor.Base
        , SReg, Sing(..)
        , NotSP, NotLR, NotPC, NotR12
        , EvenReg, OddReg, SuccReg
-       ) 
+       )
 where
-    
+
 import Data.Singletons.TH
 import ARM.Utils.TH
 
@@ -26,6 +26,7 @@ import ARM.Utils.TH
 data Reg
   = R0 | R1 | R2 | R3 | R4 | R5 | R6 | R7 | R8 | R9 | R10 | R11 | R12
   | SP | LR | PC
+  deriving (Show, Eq)
 
 -- | Types that correspond to the promoted Reg and has one inhabitant.
 $(genSingletons [''Reg])
