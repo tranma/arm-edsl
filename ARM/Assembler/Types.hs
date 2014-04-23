@@ -67,7 +67,7 @@ data ShiftReg
      -> [Effect] -- e Effects of the shift
      -> * where
   NoShift :: SReg m -> ShiftReg m () '[]
-  -- Immediate shifts
+  -- Value shifts
   ASR_n :: (KnownNat n, 1 <= n, n <= 32)
         => SReg m -> Proxy n -> ShiftReg m N ('Read m ': '[])
   LSL_n :: (KnownNat n, 0 <= n, n <= 31)
@@ -83,13 +83,20 @@ data ShiftReg
   LSR_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
   ROR_s :: SReg m -> SReg s -> ShiftReg m (SReg s) ['Read m, 'Read s]
 
+
+-- | Immediate constant is an 8-bit value with a 4-bit right rotation.
+--   It has a finite range of possible values, but currently we don't check
+--   this at compile time. (maybe there's no point)
+--
+type Immediate = Int
+
 -- | Flexible second operand (@Operand2@)
 data Op
-     :: *        -- m Is the op a register or constant?
+     :: *        -- m a register or immediate constant
      -> *        -- s If op is a register: the shift
      -> [Effect] -- e If op is a register: effects of the shift
      -> * where
-  Constant :: Op () () '[]
+  Constant :: Immediate -> Op Immediate () '[]
   ShiftReg :: ShiftReg m s e -> Op (SReg m) s e
 
 -- | Constant for offsets (range is too large to be encoded in the types)
@@ -154,6 +161,7 @@ data Cond
   | GT      -- ^ Z clear, N == V
   | LE      -- ^ Z set, N != V
   | AL      -- ^ Any (default)
+  deriving Show
 
 type InsArithmetic d n m s
   = forall e .
@@ -163,55 +171,60 @@ type InsArithmetic d n m s
       -> Op (SReg m) (SReg s) e
       -> Ins (['Write d, 'Read n] :++: e)
 
+class NotPC' (a :: *)
+instance NotPC' ()
+instance NotPC' Immediate
+instance NotPC r => NotPC' (SReg r)
+
 -- | Instruction Set
 data Ins :: [Effect] -> * where
   -- Add, Subtract, Reverse Subtract with/without curry
   ADD :: ( NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool                   -- update arithmetic flags?
       -> Cond                   -- conditional execution
       -> SReg d                 -- destination
       -> SReg n                 -- register holding the first operand
-      -> Op (SReg m) (SReg s) e -- flexible second operand
+      -> Op m s e               -- flexible second operand
       -> Ins (['Write d, 'Read n] :++: e)
   SUB :: ( NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool
       -> Cond
       -> SReg d -> SReg n
-      -> Op (SReg m) (SReg s) e
+      -> Op m s e
       -> Ins (['Write d, 'Read n] :++: e)
   RSB :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool
       -> Cond
       -> SReg d -> SReg n
-      -> Op (SReg m) (SReg s) e
+      -> Op m s e
       -> Ins (['Write d, 'Read n] :++: e)
   ADC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool
       -> Cond
       -> SReg d -> SReg n
-      -> Op (SReg m) (SReg s) e
+      -> Op m s e
       -> Ins (['Write d, 'Read n] :++: e)
   SBC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool
       -> Cond
       -> SReg d -> SReg n
-      -> Op (SReg m) (SReg s) e
+      -> Op m s e
       -> Ins (['Write d, 'Read n] :++: e)
   RSC :: ( NotSP d, NotSP n
          , NotPC d, NotPC n
-         , NotPC m, NotPC s )
+         , NotPC' s, NotPC' m)
       => Bool
       -> Cond
       -> SReg d -> SReg n
-      -> Op (SReg m) (SReg s) e
+      -> Op m s e
       -> Ins (['Write d, 'Read n] :++: e)
 
   -- Load and Store (immediate and register-controlled offset)
